@@ -128,13 +128,13 @@ function App() {
     };
   };
 
-  // 🔴 Optional: Function to close WebSocket
-  const closeWebSocket = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      setLogs((prev) => [...prev, "🔌 WebSocket closed"]);
-    }
-  };
+  // // 🔴 Optional: Function to close WebSocket
+  // const closeWebSocket = () => {
+  //   if (wsRef.current) {
+  //     wsRef.current.close();
+  //     setLogs((prev) => [...prev, "🔌 WebSocket closed"]);
+  //   }
+  // };
 
   useEffect(() => {
     if(client){
