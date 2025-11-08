@@ -16,10 +16,12 @@ import axios from "axios";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // const app = express();
-const expressApp = express();
-const wsInstance = expressWs(expressApp);
-const { app, getWss } = wsInstance;
-
+// const expressApp = express();
+// // const wsInstance = expressWs(expressApp);
+// // const { app, getWss } = wsInstance;
+// // const app = express();
+const app = express();
+const { getWss } = expressWs(app);
 app.use(bodyParser.json());
 app.use(cors());
 
