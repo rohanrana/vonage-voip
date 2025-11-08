@@ -140,6 +140,7 @@ function App() {
     if(client){
     initClient();
     }
+    // eslint-disable-next-line
   }, [client]);
 
   const initClient = async () => {
