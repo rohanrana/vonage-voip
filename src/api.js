@@ -1,7 +1,7 @@
 // src/api.js
 export const getVonageToken = async () => {
   try {
-    const res = await fetch('http://localhost:3002/api/token');
+    const res = await fetch('https://vonage-voip.onrender.com/api/token');
     const data = await res.json()
     return data.token;
   } catch (err) {
@@ -13,7 +13,7 @@ export const getVonageToken = async () => {
 
 export async function makeCallAPI(to) {
   try {
-    const response = await fetch("http://localhost:3002/api/call", {
+    const response = await fetch("https://vonage-voip.onrender.com/api/call", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
