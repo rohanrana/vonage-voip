@@ -84,7 +84,7 @@ function App() {
 
   // 🔌 Function to initialize WebSocket connection
   const initWebSocket = () => {
-    const ws = new WebSocket("wss://8710b6908dfb.ngrok-free.app/ws");
+    const ws = new WebSocket("wss://vonage-voip.onrender.com/ws");
     wsRef.current = ws;
 
     ws.onopen = () => {

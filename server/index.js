@@ -28,8 +28,8 @@ app.use(cors());
 // =========================
 // 🔧 MANUAL ENV VARIABLES
 // =========================
-const VONAGE_APPLICATION_ID = '4b5387d0-eee8-43ba-8771-5c2c4ee9d28f'; // replace with your real Application ID
-const VONAGE_NUMBER = '12345678901';  // e.g. '14155550123'
+const VONAGE_APPLICATION_ID = '9f1434b2-8977-4405-add4-83568704c0a8'; // replace with your real Application ID
+const VONAGE_NUMBER = '+441414065952 ';  // e.g. '14155550123'
 const VONAGE_PRIVATE_KEY_PATH = path.join(__dirname, 'private.key'); // key file path
 const DEEPGRAM_API_KEY = "9c3cdc284fb9d4ef00a8a70c4bc70a1219621e2f"
 const DEEPGRAM_ASR_LANGUAGE = "en-US";
