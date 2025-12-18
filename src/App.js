@@ -187,7 +187,7 @@ function App() {
 
       // const newCallId = await client.serverCall({ to: fullNumber });
       // console.log("🚀 ~ makeCall ~ newCallId:", newCallId);
-      const res = await fetch("https://78864b6eaf2f.ngrok-free.app/api/call", {
+      const res = await fetch("https://d6942579588b.ngrok-free.app/api/call", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

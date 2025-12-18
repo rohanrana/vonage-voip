@@ -714,10 +714,10 @@ app.get("/answer", async (req, res) => {
 
   // ✅ Get your current ngrok URL from environment or hardcode it
   const NGROK_URL =
-    process.env.NGROK_URL || "https://78864b6eaf2f.ngrok-free.app";
+    process.env.NGROK_URL || "https://d6942579588b.ngrok-free.app";
 
   // ✅ Construct WebSocket URL properly - NO SPACES!
-  const wsUrl = `wss://78864b6eaf2f.ngrok-free.app/socket/vonage?callId=${callId}&sessionId=${session_id}&fromUserId=${from_user_id}&toUserId=${to_user_id}`;
+  const wsUrl = `wss://d6942579588b.ngrok-free.app/socket/vonage?callId=${callId}&sessionId=${session_id}&fromUserId=${from_user_id}&toUserId=${to_user_id}`;
 
   console.log("🔗 WebSocket URL:", wsUrl);
 
@@ -839,7 +839,7 @@ app.post("/api/call", async (req, res) => {
   console.log("📞 Call params:", req.body);
   const callId = randomUUID();
 
-  const NGROK_URL = "https://78864b6eaf2f.ngrok-free.app";
+  const NGROK_URL = "https://d6942579588b.ngrok-free.app";
 
   try {
     const result = await vonage.voice.createOutboundCall({
@@ -889,6 +889,6 @@ app.post("/api/call", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("🚀 Server running on port " + PORT);
-  console.log("📡 Socket.IO available at https://78864b6eaf2f.ngrok-free.app");
-  console.log("🧪 Test page:  https://78864b6eaf2f.ngrok-free.app/test-socket");
+  console.log("📡 Socket.IO available at https://d6942579588b.ngrok-free.app");
+  console.log("🧪 Test page:  https://d6942579588b.ngrok-free.app/test-socket");
 });
