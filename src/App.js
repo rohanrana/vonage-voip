@@ -1,5 +1,3 @@
-
-
 // ✅ --- Your React App starts below ---
 import React, { useEffect, useRef, useState } from "react";
 import { getVonageToken } from "./api";
@@ -10,6 +8,8 @@ import {
   LoggingLevel,
 } from "@vonage/client-sdk";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { useCallAudioWebSocket } from "./hooks/useCallAudioWebSocket";
+import { useCallAudio } from "./hooks/useCallAudioWS";
 // import "bootstrap-icons/font/bootstrap-icons.css"; // ✅ for phone icons
 // ✅ --- Silence Vonage internal noise ---
 const originalError = console.error;
@@ -58,8 +58,18 @@ function App() {
     c.setConfig(config);
     return c;
   });
+  // const {
+  //   isStreaming,
+  //   error: audioError,
+  //   sessionInfo,
+  //   requestMicrophonePermission,
+  //   startForCall,
+  //   stop,
+  // } = useCallAudioWebSocket();
 
   const audioCtx = useRef(null);
+  const { isConnected, disconnect, callStatus, isMicrophoneActive } =
+    useCallAudio(callId);
 
   // 🌍 Country selector data
   const [country, setCountry] = useState({
@@ -81,51 +91,51 @@ function App() {
 
   const [logs, setLogs] = useState([]);
   const wsRef = useRef(null);
+  console.log("Socket IO WebSocket connection", {
+    isConnected,
+    disconnect,
+    callStatus,
+    isMicrophoneActive,
+  });
 
   // 🔌 Function to initialize WebSocket connection
   const initWebSocket = () => {
-    const ws = new WebSocket("wss://vonage-voip.onrender.com/ws");
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("✅ Connected to WS server");
-      setLogs((prev) => [...prev, "✅ Connected to WS server"]);
-
-      // 🔁 Keep connection alive with ping every 30 seconds
-      const interval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ ping: true }));
-        }
-      }, 30000);
-
-      ws.onclose = () => clearInterval(interval);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        console.log("📩 Socket message:", msg);
-
-        if (msg.type === "vonage-event") {
-          // setLogs((prev) => [...prev, `📡 ${JSON.stringify(msg.data)}`]);
-          setStatus(msg?.data?.status)
-
-        }
-        
-        // else if (msg.type === "info") {
-        //   setLogs((prev) => [...prev, msg.message]);
-        // } else {
-        //   setLogs((prev) => [...prev, event.data]);
-        // }
-      } catch {
-        setLogs((prev) => [...prev, event.data]);
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.error("❌ WS Error:", err);
-      setLogs((prev) => [...prev, "❌ WebSocket error"]);
-    };
+    // const ws = new WebSocket(
+    //   `wss://4bbb2f06ba22.ngrok-free.app/browser?callId=${callId}`
+    // );
+    // wsRef.current = ws;
+    // ws.onopen = () => {
+    //   console.log("✅ Connected to WS server");
+    //   setLogs((prev) => [...prev, "✅ Connected to WS server"]);
+    //   // 🔁 Keep connection alive with ping every 30 seconds
+    //   const interval = setInterval(() => {
+    //     if (ws.readyState === WebSocket.OPEN) {
+    //       ws.send(JSON.stringify({ ping: true }));
+    //     }
+    //   }, 30000);
+    //   ws.onclose = () => clearInterval(interval);
+    // };
+    // ws.onmessage = (event) => {
+    //   try {
+    //     const msg = JSON.parse(event.data);
+    //     console.log("📩 Socket message:", msg);
+    //     if (msg.type === "vonage-event") {
+    //       // setLogs((prev) => [...prev, `📡 ${JSON.stringify(msg.data)}`]);
+    //       setStatus(msg?.data?.status);
+    //     }
+    //     // else if (msg.type === "info") {
+    //     //   setLogs((prev) => [...prev, msg.message]);
+    //     // } else {
+    //     //   setLogs((prev) => [...prev, event.data]);
+    //     // }
+    //   } catch {
+    //     setLogs((prev) => [...prev, event.data]);
+    //   }
+    // };
+    // ws.onerror = (err) => {
+    //   console.error("❌ WS Error:", err);
+    //   setLogs((prev) => [...prev, "❌ WebSocket error"]);
+    // };
   };
 
   // // 🔴 Optional: Function to close WebSocket
@@ -137,8 +147,8 @@ function App() {
   // };
 
   useEffect(() => {
-    if(client){
-    initClient();
+    if (client) {
+      initClient();
     }
     // eslint-disable-next-line
   }, [client]);
@@ -150,7 +160,7 @@ function App() {
       setSession(sessionObj);
       setStatus("Ready to make calls");
       setIsSystemOk(true);
-      initWebSocket()
+      initWebSocket();
     } catch (err) {
       console.error("❌ Init error:", err);
       setError(err);
@@ -163,18 +173,61 @@ function App() {
       alert("Please enter a valid phone number");
       return;
     }
+    // const micStream = await requestMicrophonePermission();
+    // if (!micStream) {
+    //   // Error already set by requestMicrophonePermission
+    //   return;
+    // }
 
     try {
       setIsCalling(true);
       setStatus("Calling...");
 
-      const fullNumber = `${country.dial_code}${phoneNumber}`; // ✅ Include country code
+      // const fullNumber = `${country.dial_code}${phoneNumber}`; // ✅ Include country code
 
-      const newCallId = await client.serverCall({ to: fullNumber });
-      setCallId(newCallId);
+      // const newCallId = await client.serverCall({ to: fullNumber });
+      // console.log("🚀 ~ makeCall ~ newCallId:", newCallId);
+      const res = await fetch("https://78864b6eaf2f.ngrok-free.app/api/call", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: "+917874056406",
+          from_user_id: "1111",
+          to_user_id: "2222",
+          session_id: session,
+        }),
+      });
+
+      if (!res.ok) {
+        // setError(data.error || "Failed to start call");
+        setStatus("Call failed");
+        // setIsCalling(false);
+        // Clean up the mic stream since we're not using it
+        // micStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const data = await res.json();
+      const uuid =
+        data.uuid || (Array.isArray(data.calls) ? data.calls[0]?.uuid : null);
+      console.log("🚀 ~ makeCall ~ data:", data);
+      //  await startForCall(data.uuid, "1111", "2222", micStream);
+      // if (data.uuid) {
+      setCallId(data.callId);
+      //   // Use Vonage uuid as sessionId
+      //   const sessionId = uuid || data.callId;
+      //   // Start browser audio streaming for this call, passing the already-obtained stream
+      // } else {
+      //   // No callId returned, clean up the mic stream
+      //   micStream.getTracks().forEach((track) => track.stop());
+      // }
     } catch (err) {
       console.error("❌ Call error:", err);
       setStatus("Call failed");
+      // micStream.getTracks().forEach((track) => track.stop());
+
       setIsCalling(false);
     }
   };
@@ -221,24 +274,25 @@ function App() {
   // 🎵 DTMF tone frequencies
   // ----------------------------
   const dtmfFrequencies = {
-    "1": [697, 1209],
-    "2": [697, 1336],
-    "3": [697, 1477],
-    "4": [770, 1209],
-    "5": [770, 1336],
-    "6": [770, 1477],
-    "7": [852, 1209],
-    "8": [852, 1336],
-    "9": [852, 1477],
+    1: [697, 1209],
+    2: [697, 1336],
+    3: [697, 1477],
+    4: [770, 1209],
+    5: [770, 1336],
+    6: [770, 1477],
+    7: [852, 1209],
+    8: [852, 1336],
+    9: [852, 1477],
     "*": [941, 1209],
-    "0": [941, 1336],
+    0: [941, 1336],
     "#": [941, 1477],
   };
 
   const playDTMFTone = (digit) => {
     if (!dtmfFrequencies[digit]) return;
     if (!audioCtx.current)
-      audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.current = new (window.AudioContext ||
+        window.webkitAudioContext)();
 
     const [f1, f2] = dtmfFrequencies[digit];
     const duration = 0.15; // 150ms tone
@@ -290,7 +344,6 @@ function App() {
     { num: "#", text: "" },
   ];
 
-
   return (
     <div className="d-flex align-items-center justify-content-center vh-100 bg-light">
       <div
@@ -306,7 +359,10 @@ function App() {
 
           <div className="text-muted mb-2">
             <small>
-              Status: <span className="fw-semibold">{logs?.status ? logs.status:status}</span>
+              Status:{" "}
+              <span className="fw-semibold">
+                {logs?.status ? logs.status : status}
+              </span>
             </small>
           </div>
 

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@aws-sdk/client-transcribe-streaming": "^3.954.0",
     "@deepgram/sdk": "^4.11.2",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -15,14 +16,19 @@
     "body-parser": "^2.2.0",
     "bootstrap": "^5.3.8",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-ws": "^5.0.2",
     "jsonwebtoken": "^9.0.2",
+    "p-event": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "web-vitals": "^2.1.4",
+    "ws": "^8.18.3"
   },
   "scripts": {
     "start": "react-scripts start",

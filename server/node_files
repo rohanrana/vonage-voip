@@ -1,0 +1,8 @@
+APP_ID=402f2ffc-8ec5-462b-a45c-0359d60afe0c
+VONAGE_NUMBER=+441414065952
+PRIVATE_KEY_PATH=private.key
+PORT=3002
+RAILS_DEVELOPMENT_WEBHOOK_URL=https://dev-api.healthya.co.uk/vonage/event
+RAILS_PRODUCTION_WEBHOOK_URL=production_url
+APP_ENVIRONMENT=development
+
