@@ -62,6 +62,20 @@ const transcriptionService = new TranscriptionService(
 const activeTranscriptions = new Map();
 
 // Transcription callback handler
+const handleTranscription = (data) => {
+  console.log(`📝 Transcription [${data.speaker}]: ${data.transcript}`);
+
+  // Send transcription to browser via Socket.IO
+  const browserSocket = browserSockets.get(data.callId);
+  if (browserSocket && browserSocket.connected) {
+    browserSocket.emit("transcription", {
+      speaker: data.speaker,
+      transcript: data.transcript,
+      isFinal: data.isFinal,
+      timestamp: data.timestamp,
+    });
+  }
+};
 
 // =========================
 // :compass: PATH & DIRECTORY SETUP
@@ -243,167 +257,120 @@ const browserIO = io.of("/browser");
 
 browserIO.on("connection", (socket) => {
   console.log("✅ Browser connected:", socket.id);
+  console.log("📡 Transport:", socket.conn.transport.name);
 
   let callId = null;
 
-  socket.on("register", (data) => {
+  socket.conn.on("upgrade", (transport) => {
+    console.log("🔄 Transport upgraded to:", transport.name);
+  });
+
+  socket.on("register", async (data) => {
     callId = data.callId;
     console.log(`📞 Browser registered for call ${callId}`);
     browserSockets.set(callId, socket);
-
-    // Initialize transcriptions map
-    if (!activeTranscriptions.has(callId)) {
-      activeTranscriptions.set(callId, {});
-    }
 
     socket.emit("registered", {
       callId,
       status: "connected",
       socketId: socket.id,
+      transport: socket.conn.transport.name,
     });
+    // ✅ Start transcription for browser user
+    // try {
+    //   const browserTranscription =
+    //     await transcriptionService.startTranscription(
+    //       callId,
+    //       "browser",
+    //       handleTranscription
+    //     );
+
+    //   // Store transcription reference
+    //   if (!activeTranscriptions.has(callId)) {
+    //     activeTranscriptions.set(callId, {});
+    //   }
+    //   activeTranscriptions.get(callId).browser = browserTranscription;
+
+    //   console.log(`✅ Browser transcription started for call ${callId}`);
+    // } catch (error) {
+    //   console.error("❌ Failed to start browser transcription:", error);
+    // }
   });
 
-  // ✅ Receive audio from browser for transcription
-  socket.on("audio:transcribe", async (data) => {
-    const { callId, speaker, audio } = data;
+  // ✅ NEW:  Receive microphone data from browser
+  socket.on("microphone:data", (data) => {
+    const micCallId = data.callId;
 
-    console.log(
-      `🎤 Received audio for transcription:  ${speaker} in call ${callId}`
-    );
+    // Get Vonage WebSocket connection
+    const vonageWs = vonageConnections.get(micCallId);
 
-    // Start appropriate transcription stream (lazy initialization)
-    let transcription;
-    if (speaker === "browser") {
-      transcription = await ensureBrowserTranscription(callId);
-    } else if (speaker === "phone") {
-      transcription = await ensurePhoneTranscription(callId);
-    }
+    if (vonageWs && vonageWs.readyState === 1) {
+      // WebSocket. OPEN = 1
+      // Convert base64 back to binary
+      const binaryString = atob(data.audio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
 
-    // Send audio to transcription stream
-    if (transcription?.stream && !transcription.stream.destroyed) {
-      try {
-        // Decode base64 audio
-        const binaryString = atob(audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
+      // Send binary audio to Vonage
+      vonageWs.send(bytes.buffer);
+
+      // Log occasionally
+      if (Math.random() < 0.01) {
+        console.log(
+          `🎤 Microphone audio sent to Vonage: ${bytes.length} bytes`
+        );
+      }
+      // ✅ Send to browser transcription stream (with null check)
+      const transcriptions = activeTranscriptions.get(micCallId);
+      if (transcriptions?.browser?.stream) {
+        try {
+          const binaryString = atob(data.audio);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          // Write to transcription stream
+          transcriptions.browser.stream.write(Buffer.from(bytes.buffer));
+        } catch (err) {
+          console.error("❌ Error writing to browser transcription:", err);
         }
-        const audioBuffer = Buffer.from(bytes.buffer);
-
-        // Write to transcription stream
-        transcription.stream.write(audioBuffer);
-
-        // Log occasionally (every 100th packet)
-        if (Math.random() < 0.01) {
-          console.log(
-            `📝 Audio sent to ${speaker} transcription (${audioBuffer.length} bytes)`
-          );
-        }
-      } catch (err) {
-        console.error(`❌ Error processing ${speaker} audio:`, err.message);
+      }
+    } else {
+      if (Math.random() < 0.01) {
+        console.warn(`⚠️ No Vonage WebSocket for call ${micCallId}`);
       }
     }
   });
 
   socket.on("disconnect", (reason) => {
     console.log(`❌ Browser disconnected: ${socket.id}, reason: ${reason}`);
-
     if (callId) {
       browserSockets.delete(callId);
-
-      // Close all transcriptions for this call
+      // ✅ Close browser transcription
       const transcriptions = activeTranscriptions.get(callId);
-      if (transcriptions) {
-        if (transcriptions.browser) {
+      if (transcriptions?.browser) {
+        try {
           transcriptions.browser.close();
+        } catch (err) {
+          console.error("Error closing browser transcription:", err);
         }
-        if (transcriptions.phone) {
-          transcriptions.phone.close();
-        }
+        delete transcriptions.browser;
+      }
+
+      // Clean up if both transcriptions are closed
+      if (transcriptions && !transcriptions.phone && !transcriptions.browser) {
         activeTranscriptions.delete(callId);
       }
     }
   });
+
+  socket.on("error", (error) => {
+    console.error("❌ Socket error:", error);
+  });
 });
-
-// ✅ Helper to ensure browser transcription exists
-const ensureBrowserTranscription = async (callId) => {
-  if (!activeTranscriptions.has(callId)) {
-    activeTranscriptions.set(callId, {});
-  }
-
-  const transcriptions = activeTranscriptions.get(callId);
-
-  if (
-    transcriptions.browser?.stream &&
-    !transcriptions.browser.stream.destroyed
-  ) {
-    return transcriptions.browser;
-  }
-
-  try {
-    console.log(`🎙️ Starting browser transcription for call ${callId}`);
-    const browserTranscription = await transcriptionService.startTranscription(
-      callId,
-      "browser",
-      handleTranscription
-    );
-
-    transcriptions.browser = browserTranscription;
-    console.log(`✅ Browser transcription started`);
-    return browserTranscription;
-  } catch (error) {
-    console.error(`❌ Failed to start browser transcription: `, error.message);
-    return null;
-  }
-};
-
-// ✅ Helper to ensure phone transcription exists
-const ensurePhoneTranscription = async (callId) => {
-  if (!activeTranscriptions.has(callId)) {
-    activeTranscriptions.set(callId, {});
-  }
-
-  const transcriptions = activeTranscriptions.get(callId);
-
-  if (transcriptions.phone?.stream && !transcriptions.phone.stream.destroyed) {
-    return transcriptions.phone;
-  }
-
-  try {
-    console.log(`🎙️ Starting phone transcription for call ${callId}`);
-    const phoneTranscription = await transcriptionService.startTranscription(
-      callId,
-      "phone",
-      handleTranscription
-    );
-
-    transcriptions.phone = phoneTranscription;
-    console.log(`✅ Phone transcription started`);
-    return phoneTranscription;
-  } catch (error) {
-    console.error(`❌ Failed to start phone transcription:`, error.message);
-    return null;
-  }
-};
-const handleTranscription = (data) => {
-  console.log(
-    `📝 [${data.speaker}] ${data.isFinal ? "FINAL" : "PARTIAL"}:  ${
-      data.transcript
-    }`
-  );
-
-  // Send transcription to browser via Socket.IO
-  const browserSocket = browserSockets.get(data.callId);
-  if (browserSocket && browserSocket.connected) {
-    browserSocket.emit("transcription", {
-      speaker: data.speaker,
-      transcript: data.transcript,
-      isFinal: data.isFinal,
-      timestamp: data.timestamp,
-    });
-  }
-};
 
 // WebSocket handler for Vonage (native WebSocket)
 // WebSocket handler for Vonage (native WebSocket)
@@ -762,17 +729,17 @@ app.get("/answer", async (req, res) => {
         bargeIn: false,
       },
       // ✅ Put everyone in a conference
-      // {
-      //   action: "conversation",
-      //   name: conferenceName,
-      //   startOnEnter: true,
-      //   endOnExit: false,
-      //   record: false,
-      //   eventUrl: [`${NGROK_URL}/event`],
-      //   // ✅ Enable canSpeak and canHear for the browser user
-      //   canSpeak: true,
-      //   canHear: true,
-      // },
+      {
+        action: "conversation",
+        name: conferenceName,
+        startOnEnter: true,
+        endOnExit: false,
+        record: false,
+        eventUrl: [`${NGROK_URL}/event`],
+        // ✅ Enable canSpeak and canHear for the browser user
+        canSpeak: true,
+        canHear: true,
+      },
       // {
       //   action: "connect",
       //   timeout: 60,

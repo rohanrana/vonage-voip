@@ -10,6 +10,7 @@ import {
 import "bootstrap/dist/css/bootstrap.min.css";
 import { useCallAudioWebSocket } from "./hooks/useCallAudioWebSocket";
 import { useCallAudio } from "./hooks/useCallAudioWS";
+import { useVonageCall } from "./useVonageCall";
 // import "bootstrap-icons/font/bootstrap-icons.css"; // ✅ for phone icons
 // ✅ --- Silence Vonage internal noise ---
 const originalError = console.error;
@@ -68,8 +69,8 @@ function App() {
   // } = useCallAudioWebSocket();
 
   const audioCtx = useRef(null);
-  const { isConnected, disconnect, callStatus, isMicrophoneActive } =
-    useCallAudio(callId);
+  // const { isConnected, disconnect, callStatus, isMicrophoneActive } =
+  //   useCallAudio(callId);
 
   // 🌍 Country selector data
   const [country, setCountry] = useState({
@@ -91,12 +92,34 @@ function App() {
 
   const [logs, setLogs] = useState([]);
   const wsRef = useRef(null);
-  console.log("Socket IO WebSocket connection", {
-    isConnected,
-    disconnect,
+  // ✅ Use Vonage Call hook - pass the session
+  const {
+    call,
+    // callId,
     callStatus,
-    isMicrophoneActive,
+    transcriptions,
+    error: callError,
+    startCall,
+    // endCall,
+  } = useVonageCall(client);
+
+  console.log("use vonage call hook", {
+    call,
+    callStatus,
+    callError,
+    transcriptions,
   });
+
+  useEffect(() => {
+    if (client) {
+    }
+  }, [client, startCall]);
+  // console.log("Socket IO WebSocket connection", {
+  //   isConnected,
+  //   disconnect,
+  //   callStatus,
+  //   isMicrophoneActive,
+  // });
 
   // 🔌 Function to initialize WebSocket connection
   const initWebSocket = () => {
@@ -183,39 +206,46 @@ function App() {
       setIsCalling(true);
       setStatus("Calling...");
 
-      // const fullNumber = `${country.dial_code}${phoneNumber}`; // ✅ Include country code
+      const fullNumber = `${country.dial_code}${phoneNumber}`; // ✅ Include country code
 
-      // const newCallId = await client.serverCall({ to: fullNumber });
+      // const newCallId = await client.serverCall({
+      //   to: "+917874056406",
+      //   from_user_id: "1111",
+      //   to_user_id: "2222",
+      //   session_id: session,
+      // });
+      startCall("+917874056406");
+
       // console.log("🚀 ~ makeCall ~ newCallId:", newCallId);
-      const res = await fetch("https://78864b6eaf2f.ngrok-free.app/api/call", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: "+917874056406",
-          from_user_id: "1111",
-          to_user_id: "2222",
-          session_id: session,
-        }),
-      });
+      // const res = await fetch("https://d6942579588b.ngrok-free.app/api/call", {
+      //   method: "POST",
+      //   headers: {
+      //     "Content-Type": "application/json",
+      //   },
+      //   body: JSON.stringify({
+      //     to: fullNumber,
+      //     from_user_id: "1111",
+      //     to_user_id: "2222",
+      //     session_id: session,
+      //   }),
+      // });
 
-      if (!res.ok) {
-        // setError(data.error || "Failed to start call");
-        setStatus("Call failed");
-        // setIsCalling(false);
-        // Clean up the mic stream since we're not using it
-        // micStream.getTracks().forEach((track) => track.stop());
-        return;
-      }
+      // if (!res.ok) {
+      //   // setError(data.error || "Failed to start call");
+      //   setStatus("Call failed");
+      //   // setIsCalling(false);
+      //   // Clean up the mic stream since we're not using it
+      //   // micStream.getTracks().forEach((track) => track.stop());
+      //   return;
+      // }
 
-      const data = await res.json();
-      const uuid =
-        data.uuid || (Array.isArray(data.calls) ? data.calls[0]?.uuid : null);
-      console.log("🚀 ~ makeCall ~ data:", data);
+      // const data = await res.json();
+      // const uuid =
+      //   data.uuid || (Array.isArray(data.calls) ? data.calls[0]?.uuid : null);
+      // console.log("🚀 ~ makeCall ~ data:", data);
       //  await startForCall(data.uuid, "1111", "2222", micStream);
       // if (data.uuid) {
-      setCallId(data.callId);
+      // setCallId(newCallId);
       //   // Use Vonage uuid as sessionId
       //   const sessionId = uuid || data.callId;
       //   // Start browser audio streaming for this call, passing the already-obtained stream
