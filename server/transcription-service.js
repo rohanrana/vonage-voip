@@ -23,16 +23,62 @@ class TranscriptionService {
    * @param {function} onTranscript - Callback for transcription results
    * @returns {object} - Stream and close function
    */
+  // transcription-service.js - Add silence padding
+
   async startTranscription(callId, speaker, onTranscript) {
-    console.log(`🎙️ Starting transcription for ${speaker} in call ${callId}`);
+    console.log(`\n🎙️ ========== STARTING TRANSCRIPTION ==========`);
+    console.log(`   Call ID: ${callId}`);
+    console.log(`   Speaker: ${speaker}`);
+    console.log(`==============================================\n`);
 
-    // Create a PassThrough stream for audio data
-    const audioStream = new PassThrough();
+    const audioStream = new PassThrough({ highWaterMark: 1024 * 16 });
+    let isClosed = false;
+    let chunkCount = 0;
+    let lastAudioTime = Date.now();
 
-    // Audio stream generator for AWS
+    // ✅ Send silence every 100ms to keep stream alive
+    const silenceInterval = setInterval(() => {
+      if (!isClosed && !audioStream.destroyed) {
+        const timeSinceLastAudio = Date.now() - lastAudioTime;
+
+        // If no audio received for 100ms, send silence
+        if (timeSinceLastAudio > 100) {
+          const silenceBuffer = Buffer.alloc(320); // 20ms of silence at 16kHz
+          audioStream.write(silenceBuffer);
+        }
+      } else {
+        clearInterval(silenceInterval);
+      }
+    }, 100);
+
     const audioGenerator = async function* () {
-      for await (const chunk of audioStream) {
-        yield { AudioEvent: { AudioChunk: chunk } };
+      try {
+        for await (const chunk of audioStream) {
+          if (chunk && chunk.length > 0) {
+            chunkCount++;
+            lastAudioTime = Date.now(); // Update last audio time
+
+            if (chunkCount === 1) {
+              console.log(
+                `✅ First audio chunk sent to AWS Transcribe for ${speaker}`
+              );
+              console.log(`   Chunk size: ${chunk.length} bytes`);
+            }
+            if (chunkCount % 50 === 0) {
+              console.log(`📊 Sent ${chunkCount} chunks to AWS for ${speaker}`);
+            }
+            yield { AudioEvent: { AudioChunk: chunk } };
+          }
+        }
+      } catch (error) {
+        if (!isClosed) {
+          console.error(
+            `❌ Error in audio generator for ${speaker}: `,
+            error.message
+          );
+        }
+      } finally {
+        clearInterval(silenceInterval);
       }
     };
 
@@ -41,33 +87,61 @@ class TranscriptionService {
       MediaEncoding: "pcm",
       MediaSampleRateHertz: 16000,
       AudioStream: audioGenerator(),
+      EnablePartialResultsStabilization: true,
+      PartialResultsStability: "high",
     };
 
     try {
+      console.log(
+        `🚀 Sending StartStreamTranscriptionCommand for ${speaker}...`
+      );
       const command = new StartStreamTranscriptionCommand(params);
       const response = await this.client.send(command);
 
-      console.log(`✅ Transcription stream started for ${speaker}`);
+      console.log(`✅ AWS Transcribe stream started for ${speaker}`);
 
-      // Process transcription results
       this.processTranscriptionEvents(
         response.TranscriptResultStream,
         callId,
         speaker,
         onTranscript
-      );
+      ).catch((error) => {
+        if (!isClosed) {
+          console.error(
+            `❌ Transcription processing error for ${speaker}:`,
+            error.message
+          );
+        }
+      });
 
       return {
         stream: audioStream,
         close: () => {
-          console.log(
-            `🛑 Closing transcription for ${speaker} in call ${callId}`
-          );
-          audioStream.end();
+          if (!isClosed) {
+            console.log(
+              `🛑 Closing transcription for ${speaker} in call ${callId}`
+            );
+            console.log(`   Total chunks sent: ${chunkCount}`);
+            isClosed = true;
+            clearInterval(silenceInterval);
+
+            if (!audioStream.destroyed) {
+              audioStream.end();
+            }
+          }
         },
       };
     } catch (error) {
-      console.error(`❌ Error starting transcription for ${speaker}:`, error);
+      console.error(
+        `❌ Error starting transcription for ${speaker}:`,
+        error.message
+      );
+      clearInterval(silenceInterval);
+
+      if (!audioStream.destroyed) {
+        audioStream.destroy();
+      }
+
       throw error;
     }
   }

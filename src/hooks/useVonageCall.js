@@ -1,5 +1,5 @@
-// hooks/useVonageCall.js
-import { useEffect, useRef, useState } from "react";
+// src/hooks/useVonageCall.js
+import { useRef, useState } from "react";
 import { io } from "socket.io-client";
 
 export const useVonageCall = (session) => {
@@ -12,64 +12,59 @@ export const useVonageCall = (session) => {
   const socketRef = useRef(null);
   const audioContextRef = useRef(null);
   const localProcessorRef = useRef(null);
-  const remoteProcessorRef = useRef(null);
   const localSourceRef = useRef(null);
-  const remoteSourceRef = useRef(null);
+  const micStreamRef = useRef(null);
 
   // Start call
   const startCall = async (phoneNumber) => {
+    console.log("🎯 startCall function called");
+    console.log("   Phone number:", phoneNumber);
+
+    if (!session) {
+      const errorMsg = "No session available.  Please login first.";
+      console.error("❌", errorMsg);
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       console.log("📞 Starting call to:", phoneNumber);
       setCallStatus("connecting");
-      setTranscriptions([]); // Clear previous transcriptions
+      setTranscriptions([]);
+      setError(null);
 
-      // Create server call using Vonage Client SDK
-      const newCall = await session.serverCall({
-        to: phoneNumber,
-      });
+      console.log("📞 Calling session.serverCall.. .");
 
-      setCall(newCall);
-
-      // Use conversation ID as callId
-      const conversationId = newCall.conversation?.id || `call-${Date.now()}`;
-      setCallId(conversationId);
+      // Make the call
+      const newCall = await session.serverCall({ to: phoneNumber });
 
       console.log("✅ Call initiated");
-      console.log("   Call ID:", newCall);
-      console.log("   Call object:", newCall);
+      setCall(newCall);
+
+      // Get call ID from conversation
+      const conversationId =
+        newCall?.id || newCall?.conversation?.id || `call-${Date.now()}`;
+      setCallId(conversationId);
+
       console.log("   Conversation ID:", conversationId);
 
-      // Connect to Socket.IO for transcription
+      // Connect to transcription server
       connectToTranscription(conversationId);
 
-      // Listen to call status changes
-      // newCall.on("call:status:changed", async (status) => {
-      //   console.log("📞 Call status:", status);
-      //   setCallStatus(status);
+      // Set status to ringing
+      setCallStatus("ringing");
 
-      //   if (status === "answered") {
-      //     console.log("✅ Call answered - setting up audio capture");
-      //     // Wait a bit for streams to be ready
-      //     setTimeout(() => {
-      //       setupAudioCapture(newCall, conversationId);
-      //     }, 500);
-      //   }
+      // Start capturing browser audio immediately
+      setTimeout(() => {
+        console.log("🎤 Starting browser audio capture.. .");
+        setupBrowserAudioCapture(conversationId);
+      }, 1000);
 
-      //   if (
-      //     status === "completed" ||
-      //     status === "failed" ||
-      //     status === "rejected"
-      //   ) {
-      //     console.log("📞 Call ended");
-      //     cleanup();
-      //   }
-      // });
-
-      // newCall.on("call:error", (err) => {
-      //   console.error("❌ Call error:", err);
-      //   setError(err.message || "Call error occurred");
-      //   setCallStatus("failed");
-      // });
+      // Simulate answered status after 3 seconds (adjust as needed)
+      setTimeout(() => {
+        console.log("✅ Assuming call answered");
+        setCallStatus("answered");
+      }, 3000);
 
       return newCall;
     } catch (err) {
@@ -83,6 +78,8 @@ export const useVonageCall = (session) => {
   // Connect to Socket.IO for transcription
   const connectToTranscription = (conversationId) => {
     const SOCKET_URL = "http://localhost:3002";
+    console.log("🔌 Connecting to transcription server");
+    console.log("   📋 Registering with Call ID:", conversationId);
 
     console.log("🔌 Connecting to transcription server");
 
@@ -96,6 +93,8 @@ export const useVonageCall = (session) => {
 
     socket.on("connect", () => {
       console.log("✅ Connected to transcription server");
+      console.log("✅ Connected to transcription server");
+      console.log("   📋 Emitting register with Call ID:", conversationId);
       socket.emit("register", { callId: conversationId });
     });
 
@@ -103,18 +102,19 @@ export const useVonageCall = (session) => {
       console.log("✅ Registered for transcription:", data);
     });
 
-    socket.on("audio:transcribe", (data) => {
-      console.log(`📝 Transcription [${data.speaker}]: `, data.transcript);
+    socket.on("transcription", (data) => {
+      console.log(`📝 Transcription event received! `);
+      console.log(`   Speaker: ${data.speaker}`);
+      console.log(`   Transcript: ${data.transcript}`);
+      console.log(`   Is Final: ${data.isFinal}`);
 
       setTranscriptions((prev) => {
-        // If it's a partial result, replace the last partial from same speaker
         if (!data.isFinal) {
           const filtered = prev.filter(
             (t) => t.isFinal || t.speaker !== data.speaker
           );
           return [...filtered, data];
         }
-        // If final, just add it
         return [...prev, data];
       });
     });
@@ -124,10 +124,22 @@ export const useVonageCall = (session) => {
     });
   };
 
-  // Setup audio capture for both streams
-  const setupAudioCapture = async (activeCall, conversationId) => {
+  // Setup browser audio capture (microphone only)
+  const setupBrowserAudioCapture = async (conversationId) => {
     try {
-      console.log("🎤 Setting up audio capture for transcription");
+      console.log("🎤 Setting up browser audio capture");
+
+      // Get microphone access
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      micStreamRef.current = micStream;
+      console.log("✅ Microphone access granted");
 
       // Create audio context
       audioContextRef.current = new (window.AudioContext ||
@@ -136,45 +148,20 @@ export const useVonageCall = (session) => {
       });
 
       await audioContextRef.current.resume();
-      console.log("✅ Audio context created and resumed");
+      console.log("✅ Audio context created");
 
-      // ✅ Get local stream (browser user's microphone)
-      const localStream = await activeCall.getLocalMediaStream();
-      if (localStream) {
-        console.log("🎤 Capturing local (browser) audio");
-        captureAudioStream(localStream, conversationId, "browser");
-      } else {
-        console.warn("⚠️ No local stream available");
-      }
-
-      // ✅ Get remote stream (phone user's audio)
-      const remoteStream = await activeCall.getRemoteMediaStream();
-      if (remoteStream) {
-        console.log("📞 Capturing remote (phone) audio");
-        captureAudioStream(remoteStream, conversationId, "phone");
-      } else {
-        console.warn("⚠️ No remote stream available yet");
-        // Retry after delay
-        setTimeout(async () => {
-          const retryRemoteStream = await activeCall.getRemoteMediaStream();
-          if (retryRemoteStream) {
-            console.log("📞 Capturing remote (phone) audio (retry)");
-            captureAudioStream(retryRemoteStream, conversationId, "phone");
-          }
-        }, 1000);
-      }
-
-      console.log("✅ Audio capture setup complete");
+      // Capture and send audio
+      captureBrowserAudio(micStream, conversationId);
     } catch (err) {
-      console.error("❌ Failed to setup audio capture:", err);
-      setError("Failed to capture audio:  " + err.message);
+      console.error("❌ Failed to setup browser audio:", err);
+      setError("Microphone access denied:  " + err.message);
     }
   };
 
-  // Capture audio stream and send to server
-  const captureAudioStream = (stream, conversationId, speaker) => {
+  // Capture browser audio and send to server
+  const captureBrowserAudio = (stream, conversationId) => {
     try {
-      console.log(`🎙️ Starting ${speaker} audio capture`);
+      console.log("🎤 Starting browser audio capture");
 
       const source = audioContextRef.current.createMediaStreamSource(stream);
       const processor = audioContextRef.current.createScriptProcessor(
@@ -183,16 +170,11 @@ export const useVonageCall = (session) => {
         1
       );
 
-      // Store references
-      if (speaker === "browser") {
-        localSourceRef.current = source;
-        localProcessorRef.current = processor;
-      } else {
-        remoteSourceRef.current = source;
-        remoteProcessorRef.current = processor;
-      }
+      localSourceRef.current = source;
+      localProcessorRef.current = processor;
 
       let packetCount = 0;
+      let firstPacketLogged = false;
 
       processor.onaudioprocess = (e) => {
         if (!socketRef.current || !socketRef.current.connected) {
@@ -202,13 +184,20 @@ export const useVonageCall = (session) => {
         const inputData = e.inputBuffer.getChannelData(0);
         const sampleRate = audioContextRef.current.sampleRate;
 
+        if (!firstPacketLogged) {
+          console.log("🎤 First browser audio packet");
+          console.log("   Sample rate:", sampleRate);
+          console.log("   Buffer length:", inputData.length);
+          firstPacketLogged = true;
+        }
+
         // Resample if needed
         let outputData = inputData;
         if (sampleRate !== 16000) {
           outputData = resampleBuffer(inputData, sampleRate, 16000);
         }
 
-        // Convert Float32 to Int16
+        // Convert to Int16
         const int16Data = new Int16Array(outputData.length);
         for (let i = 0; i < outputData.length; i++) {
           let sample = outputData[i];
@@ -229,24 +218,21 @@ export const useVonageCall = (session) => {
         socketRef.current.emit("audio:transcribe", {
           audio: base64,
           callId: conversationId,
-          speaker: speaker,
+          speaker: "browser",
         });
 
-        // Log occasionally
         packetCount++;
-        if (packetCount % 100 === 0) {
-          console.log(`🎤 Sent ${packetCount} ${speaker} audio packets`);
+        if (packetCount % 50 === 0) {
+          console.log(`🎤 Sent ${packetCount} browser audio packets`);
         }
       };
 
-      // Connect:  source -> processor -> destination (to avoid echo, don't connect to destination)
       source.connect(processor);
-      // DON'T connect to destination to avoid feedback
-      // processor.connect(audioContextRef.current.destination);
+      processor.connect(audioContextRef.current.destination);
 
-      console.log(`✅ ${speaker} audio capture started`);
+      console.log("✅ Browser audio capture started");
     } catch (err) {
-      console.error(`❌ Failed to capture ${speaker} audio:`, err);
+      console.error("❌ Failed to capture browser audio:", err);
     }
   };
 
@@ -277,34 +263,38 @@ export const useVonageCall = (session) => {
   // End call
   const endCall = () => {
     console.log("📞 Ending call");
+
     if (call) {
-      call.hangup();
+      if (typeof call.hangup === "function") {
+        call.hangup();
+      } else if (typeof call.hangUp === "function") {
+        call.hangUp();
+      }
     }
+
     cleanup();
   };
 
   // Cleanup
   const cleanup = () => {
-    console.log("🧹 Cleaning up audio resources");
+    console.log("🧹 Cleaning up");
 
-    // Stop processors
+    // Stop microphone
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
+    }
+
+    // Stop processor
     if (localProcessorRef.current) {
       localProcessorRef.current.disconnect();
       localProcessorRef.current = null;
     }
-    if (remoteProcessorRef.current) {
-      remoteProcessorRef.current.disconnect();
-      remoteProcessorRef.current = null;
-    }
 
-    // Stop sources
+    // Stop source
     if (localSourceRef.current) {
       localSourceRef.current.disconnect();
       localSourceRef.current = null;
-    }
-    if (remoteSourceRef.current) {
-      remoteSourceRef.current.disconnect();
-      remoteSourceRef.current = null;
     }
 
     // Close audio context
