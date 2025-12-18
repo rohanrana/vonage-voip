@@ -19,6 +19,11 @@ export const useCallAudio = (callId) => {
   const micStreamRef = useRef(null);
   const micSourceRef = useRef(null);
   const micProcessorRef = useRef(null);
+  const analyserRef = useRef(null);
+
+  const [isSpeaking, setIsSpeaking] = useState(false); // ✅ Add speaking state
+  const [isListening, setIsListening] = useState(false); // ✅ Add listening state
+  const [audioLevel, setAudioLevel] = useState(0);
 
   useEffect(() => {
     if (!callId) {
@@ -151,17 +156,54 @@ export const useCallAudio = (callId) => {
       }
     });
     socket.on("transcription", (data) => {
-      console.log(`📝 Transcription [${data.speaker}]: `, data.transcript);
+      console.log(
+        `\n📝 ========== TRANSCRIPTION RECEIVED ON BROWSER ==========`
+      );
+      console.log(`👤 Speaker: ${data.speaker}`);
+      console.log(`💬 Transcript: ${data.transcript}`);
+      console.log(`✔️ Is Final: ${data.isFinal}`);
+      console.log(`⏰ Timestamp: ${data.timestamp}`);
+      console.log(
+        `=========================================================\n`
+      );
 
-      setTranscriptions((prev) => [
-        ...prev,
-        {
-          speaker: data.speaker,
-          transcript: data.transcript,
-          isFinal: data.isFinal,
-          timestamp: data.timestamp,
-        },
-      ]);
+      setTranscriptions((prev) => {
+        // Find if there's already an interim message from the same speaker
+        const lastMessage = prev[prev.length - 1];
+
+        // If last message is from same speaker and is NOT final, update it
+        if (
+          lastMessage &&
+          lastMessage.speaker === data.speaker &&
+          !lastMessage.isFinal
+        ) {
+          console.log(`🔄 Updating existing interim message`);
+
+          // Replace the last message with the new one
+          return [
+            ...prev.slice(0, -1), // All messages except last
+            {
+              speaker: data.speaker,
+              transcript: data.transcript,
+              isFinal: data.isFinal,
+              timestamp: data.timestamp,
+            },
+          ];
+        } else {
+          // Add as new message
+          console.log(`➕ Adding new message`);
+
+          return [
+            ...prev,
+            {
+              speaker: data.speaker,
+              transcript: data.transcript,
+              isFinal: data.isFinal,
+              timestamp: data.timestamp,
+            },
+          ];
+        }
+      });
     });
 
     socket.on("call:ended", () => {
@@ -459,5 +501,6 @@ export const useCallAudio = (callId) => {
     toggleMute,
     volume,
     setVolume,
+    transcriptions,
   };
 };

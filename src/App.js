@@ -1,4 +1,3 @@
-// ✅ --- Your React App starts below ---
 import React, { useEffect, useRef, useState } from "react";
 import { getVonageToken } from "./api";
 import {
@@ -8,10 +7,14 @@ import {
   LoggingLevel,
 } from "@vonage/client-sdk";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { useCallAudioWebSocket } from "./hooks/useCallAudioWebSocket";
 import { useCallAudio } from "./hooks/useCallAudioWS";
-// import "bootstrap-icons/font/bootstrap-icons.css"; // ✅ for phone icons
-// ✅ --- Silence Vonage internal noise ---
+import DecorativePanel from "./components/DecorativePanel";
+import CallAnimation from "./components/CallAnimation";
+import DialPad from "./components/DialPad";
+import TranscriptionPanel from "./components/TranscriptionPanel";
+import "./components/styles/animations.css";
+
+// Silence Vonage internal noise
 const originalError = console.error;
 const originalWarn = console.warn;
 const originalLog = console.log;
@@ -20,7 +23,7 @@ function isVonageNoise(args) {
   return args.some(
     (a) =>
       typeof a === "string" &&
-      (a.includes("VonageConsoleLogger::vonage.core") ||
+      (a.includes("VonageConsoleLogger:: vonage.core") ||
         a.includes("UnknownSocketEvent") ||
         a.includes("IllegalArgumentException"))
   );
@@ -40,6 +43,7 @@ console.log = (...args) => {
   if (isVonageNoise(args)) return;
   originalLog(...args);
 };
+
 function App() {
   const [status, setStatus] = useState("Initializing...");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -53,25 +57,23 @@ function App() {
   const [client] = useState(() => {
     const c = new VonageClient({
       region: ConfigRegion.US,
-      loggingLevel: LoggingLevel.NONE, // ✅ reduce SDK log level
+      loggingLevel: LoggingLevel.NONE,
     });
     c.setConfig(config);
     return c;
   });
-  // const {
-  //   isStreaming,
-  //   error: audioError,
-  //   sessionInfo,
-  //   requestMicrophonePermission,
-  //   startForCall,
-  //   stop,
-  // } = useCallAudioWebSocket();
 
   const audioCtx = useRef(null);
-  const { isConnected, disconnect, callStatus, isMicrophoneActive } =
-    useCallAudio(callId);
 
-  // 🌍 Country selector data
+  const {
+    isConnected,
+    callStatus,
+    isMicrophoneActive,
+    transcriptions,
+    toggleMute,
+    isMuted,
+  } = useCallAudio(callId);
+
   const [country, setCountry] = useState({
     code: "IN",
     name: "India",
@@ -89,63 +91,6 @@ function App() {
     { code: "AE", name: "UAE", dial_code: "+971", flag: "🇦🇪" },
   ];
 
-  const [logs, setLogs] = useState([]);
-  const wsRef = useRef(null);
-  console.log("Socket IO WebSocket connection", {
-    isConnected,
-    disconnect,
-    callStatus,
-    isMicrophoneActive,
-  });
-
-  // 🔌 Function to initialize WebSocket connection
-  const initWebSocket = () => {
-    // const ws = new WebSocket(
-    //   `wss://4bbb2f06ba22.ngrok-free.app/browser?callId=${callId}`
-    // );
-    // wsRef.current = ws;
-    // ws.onopen = () => {
-    //   console.log("✅ Connected to WS server");
-    //   setLogs((prev) => [...prev, "✅ Connected to WS server"]);
-    //   // 🔁 Keep connection alive with ping every 30 seconds
-    //   const interval = setInterval(() => {
-    //     if (ws.readyState === WebSocket.OPEN) {
-    //       ws.send(JSON.stringify({ ping: true }));
-    //     }
-    //   }, 30000);
-    //   ws.onclose = () => clearInterval(interval);
-    // };
-    // ws.onmessage = (event) => {
-    //   try {
-    //     const msg = JSON.parse(event.data);
-    //     console.log("📩 Socket message:", msg);
-    //     if (msg.type === "vonage-event") {
-    //       // setLogs((prev) => [...prev, `📡 ${JSON.stringify(msg.data)}`]);
-    //       setStatus(msg?.data?.status);
-    //     }
-    //     // else if (msg.type === "info") {
-    //     //   setLogs((prev) => [...prev, msg.message]);
-    //     // } else {
-    //     //   setLogs((prev) => [...prev, event.data]);
-    //     // }
-    //   } catch {
-    //     setLogs((prev) => [...prev, event.data]);
-    //   }
-    // };
-    // ws.onerror = (err) => {
-    //   console.error("❌ WS Error:", err);
-    //   setLogs((prev) => [...prev, "❌ WebSocket error"]);
-    // };
-  };
-
-  // // 🔴 Optional: Function to close WebSocket
-  // const closeWebSocket = () => {
-  //   if (wsRef.current) {
-  //     wsRef.current.close();
-  //     setLogs((prev) => [...prev, "🔌 WebSocket closed"]);
-  //   }
-  // };
-
   useEffect(() => {
     if (client) {
       initClient();
@@ -160,7 +105,6 @@ function App() {
       setSession(sessionObj);
       setStatus("Ready to make calls");
       setIsSystemOk(true);
-      initWebSocket();
     } catch (err) {
       console.error("❌ Init error:", err);
       setError(err);
@@ -173,20 +117,11 @@ function App() {
       alert("Please enter a valid phone number");
       return;
     }
-    // const micStream = await requestMicrophonePermission();
-    // if (!micStream) {
-    //   // Error already set by requestMicrophonePermission
-    //   return;
-    // }
 
     try {
       setIsCalling(true);
       setStatus("Calling...");
 
-      // const fullNumber = `${country.dial_code}${phoneNumber}`; // ✅ Include country code
-
-      // const newCallId = await client.serverCall({ to: fullNumber });
-      // console.log("🚀 ~ makeCall ~ newCallId:", newCallId);
       const res = await fetch("https://d6942579588b.ngrok-free.app/api/call", {
         method: "POST",
         headers: {
@@ -201,43 +136,25 @@ function App() {
       });
 
       if (!res.ok) {
-        // setError(data.error || "Failed to start call");
         setStatus("Call failed");
-        // setIsCalling(false);
-        // Clean up the mic stream since we're not using it
-        // micStream.getTracks().forEach((track) => track.stop());
         return;
       }
 
       const data = await res.json();
-      const uuid =
-        data.uuid || (Array.isArray(data.calls) ? data.calls[0]?.uuid : null);
       console.log("🚀 ~ makeCall ~ data:", data);
-      //  await startForCall(data.uuid, "1111", "2222", micStream);
-      // if (data.uuid) {
       setCallId(data.callId);
-      //   // Use Vonage uuid as sessionId
-      //   const sessionId = uuid || data.callId;
-      //   // Start browser audio streaming for this call, passing the already-obtained stream
-      // } else {
-      //   // No callId returned, clean up the mic stream
-      //   micStream.getTracks().forEach((track) => track.stop());
-      // }
     } catch (err) {
       console.error("❌ Call error:", err);
       setStatus("Call failed");
-      // micStream.getTracks().forEach((track) => track.stop());
-
       setIsCalling(false);
     }
   };
 
   useEffect(() => {
     client.on("legStatusUpdate", (callId, legId, legStatus) => {
-      console.log(`☎️ Status: ${legStatus}`);
+      console.log(`☎️ Status:  ${legStatus}`);
       if (legStatus === "ANSWERED") setStatus("Call connected");
       if (legStatus === "COMPLETED" || legStatus === "REMOTE_REJECT") {
-        // setStatus("Call ended");
         setIsCalling(false);
         setCallId(null);
       }
@@ -249,7 +166,7 @@ function App() {
       setCallId(null);
     });
 
-    client.on("disconnect", (reason) => {
+    client.on("disconnect", () => {
       setStatus("Call disconnected");
     });
   }, [client]);
@@ -259,7 +176,7 @@ function App() {
       alert("No active call to hang up");
       return;
     }
-
+    console.log("Attempting to hang up call:", callId);
     try {
       await client.hangup(callId);
       console.log("✅ Call hung up successfully");
@@ -270,9 +187,6 @@ function App() {
     }
   };
 
-  // ----------------------------
-  // 🎵 DTMF tone frequencies
-  // ----------------------------
   const dtmfFrequencies = {
     1: [697, 1209],
     2: [697, 1336],
@@ -295,7 +209,7 @@ function App() {
         window.webkitAudioContext)();
 
     const [f1, f2] = dtmfFrequencies[digit];
-    const duration = 0.15; // 150ms tone
+    const duration = 0.15;
     const ctx = audioCtx.current;
 
     const osc1 = ctx.createOscillator();
@@ -328,156 +242,63 @@ function App() {
   const handleClear = () => {
     if (!isCalling) setPhoneNumber("");
   };
-
-  const dialPadKeys = [
-    { num: "1", text: "" },
-    { num: "2", text: "ABC" },
-    { num: "3", text: "DEF" },
-    { num: "4", text: "GHI" },
-    { num: "5", text: "JKL" },
-    { num: "6", text: "MNO" },
-    { num: "7", text: "PQRS" },
-    { num: "8", text: "TUV" },
-    { num: "9", text: "WXYZ" },
-    { num: "*", text: "" },
-    { num: "0", text: "+" },
-    { num: "#", text: "" },
-  ];
+  useEffect(() => {
+    if (callStatus === "ended") {
+      setIsCalling(false);
+    }
+  }, [callStatus]);
 
   return (
-    <div className="d-flex align-items-center justify-content-center vh-100 bg-light">
-      <div
-        className="card shadow-lg border-0"
-        style={{
-          width: "21rem",
-          borderRadius: "1rem",
-          background: "#fefefe",
-        }}
-      >
-        <div className="card-body text-center">
-          <h4 className="fw-bold text-primary mb-3">VoIP Call Demo</h4>
+    <div
+      className="min-vh-100 d-flex align-items-center justify-content-center p-4"
+      style={{
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      }}
+    >
+      <div className="d-flex gap-4">
+        {/* Decorative Panel or Calling Animation */}
+        {!isCalling && <DecorativePanel />}
 
-          <div className="text-muted mb-2">
-            <small>
-              Status:{" "}
-              <span className="fw-semibold">
-                {logs?.status ? logs.status : status}
-              </span>
-            </small>
-          </div>
+        {isCalling && (
+          <CallAnimation
+            phoneNumber={phoneNumber}
+            country={country}
+            isMicrophoneActive={isMicrophoneActive}
+            isMuted={isMuted}
+            toggleMute={toggleMute}
+          />
+        )}
 
-          {/* 🌍 Country Selector */}
-          <div className="mb-3">
-            <select
-              className="form-select text-center"
-              style={{ borderRadius: "0.5rem" }}
-              value={country.code}
-              onChange={(e) => {
-                const selected = countries.find(
-                  (c) => c.code === e.target.value
-                );
-                setCountry(selected);
-              }}
-              disabled={isCalling}
-            >
-              {countries.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag} {c.name} ({c.dial_code})
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Dial Pad */}
+        <DialPad
+          isCalling={isCalling}
+          status={status}
+          callStatus={callStatus}
+          country={country}
+          countries={countries}
+          setCountry={setCountry}
+          phoneNumber={phoneNumber}
+          handleDigitPress={handleDigitPress}
+          isSystemOk={isSystemOk}
+          makeCall={makeCall}
+          handleDelete={handleDelete}
+          handleClear={handleClear}
+          endCall={endCall}
+          error={error}
+          isMuted={isMuted}
+          toggleMute={toggleMute}
+        />
 
-          <div className="fs-4 fw-bold mb-3 border-bottom pb-2">
-            {phoneNumber ? (
-              <>
-                <span className="text-secondary">{country.dial_code}</span>{" "}
-                {phoneNumber}
-              </>
-            ) : (
-              <span className="text-secondary">Enter number</span>
-            )}
-          </div>
-
-          {/* Dial Pad */}
-          <div className="container">
-            <div className="row row-cols-3 g-3">
-              {dialPadKeys.map((key) => (
-                <div className="col" key={key.num}>
-                  <button
-                    className="btn btn-light border shadow-sm w-100"
-                    style={{
-                      height: "70px",
-                      fontSize: "24px",
-                      fontWeight: "500",
-                      position: "relative",
-                    }}
-                    onClick={() => handleDigitPress(key.num)}
-                    disabled={isCalling}
-                  >
-                    <div>{key.num}</div>
-                    {key.text && (
-                      <small
-                        style={{
-                          position: "absolute",
-                          bottom: "6px",
-                          left: 0,
-                          right: 0,
-                          fontSize: "11px",
-                          color: "#666",
-                        }}
-                      >
-                        {key.text}
-                      </small>
-                    )}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div className="mt-4 d-flex justify-content-center gap-3">
-            {!isCalling ? (
-              <>
-                <button
-                  className="btn btn-success p-3 fs-4"
-                  disabled={!isSystemOk || !phoneNumber}
-                  onClick={makeCall}
-                >
-                  <i className="bi bi-telephone-fill"></i>
-                </button>
-                <button
-                  className="btn btn-secondary p-3 fs-4"
-                  onClick={handleDelete}
-                  disabled={!phoneNumber}
-                >
-                  ⌫
-                </button>
-                <button
-                  className="btn btn-warning p-3 fs-4"
-                  onClick={handleClear}
-                  disabled={!phoneNumber}
-                >
-                  ❌
-                </button>
-              </>
-            ) : (
-              <button
-                className="btn btn-danger rounded-circle p-3 fs-4"
-                onClick={endCall}
-              >
-                <i className="bi bi-telephone-x-fill"></i>
-              </button>
-            )}
-          </div>
-
-          {error && (
-            <div className="alert alert-danger mt-3 py-2">
-              ⚠️ {error.message || "Error initializing client"}
-            </div>
-          )}
-        </div>
+        {/* Transcription Panel */}
+        {isCalling && (
+          <TranscriptionPanel
+            transcriptions={transcriptions}
+            isConnected={isConnected}
+            isMicrophoneActive={isMicrophoneActive}
+            isMuted={isMuted}
+            toggleMute={toggleMute}
+          />
+        )}
       </div>
     </div>
   );
