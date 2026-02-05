@@ -1,0 +1,353 @@
+# =============================================================================
+# Bitbucket Pipelines Configuration for Frontend Versioning and Deployment
+# =============================================================================
+# This pipeline handles:
+#   - Automated semantic versioning based on commits/branches
+#   - Build-time version injection
+#   - Production-ready deployment with version tracking
+# =============================================================================
+
+image: node:18
+
+# Define reusable anchors
+definitions:
+  caches:
+    npm: ~/.npm
+    node: node_modules
+
+  scripts:
+    - script: &install-dependencies |
+        npm ci --legacy-peer-deps
+    
+    - script: &setup-versioning-and-export |
+        chmod +x ./scripts/version-manager.sh
+        # Run version manager and capture output for env vars
+        VERSION_OUTPUT=$(./scripts/version-manager.sh ${VERSION_INCREMENT:-} 2>&1)
+        echo "$VERSION_OUTPUT"
+        # Export REACT_APP_* variables from the output
+        eval $(echo "$VERSION_OUTPUT" | grep "^REACT_APP_" | sed 's/^/export /')
+
+  steps:
+    # Shared build step
+    - step: &build-step
+        name: Build Application
+        caches:
+          - npm
+          - node
+        script:
+          - *install-dependencies
+          - *setup-versioning-and-export
+          - npm run build
+          # Copy version.json to build directory
+          - cp public/version.json build/version.json
+        artifacts:
+          - build/**
+          - public/version.json
+
+    # Test step
+    - step: &test-step
+        name: Run Tests
+        caches:
+          - npm
+          - node
+        script:
+          - *install-dependencies
+          - npm test -- --coverage --watchAll=false
+
+# =============================================================================
+# Pipeline Definitions
+# =============================================================================
+
+pipelines:
+  # Default pipeline for all branches (excluding special ones)
+  default:
+    - step: *test-step
+    - step: *build-step
+
+  # =============================================================================
+  # Branch-specific pipelines
+  # =============================================================================
+  
+  branches:
+    # Production deployments from main/master
+    main:
+      - step: *test-step
+      - step:
+          <<: *build-step
+          name: Build for Production
+      - step:
+          name: Deploy to Production
+          deployment: production
+          script:
+            # Read version from built artifact
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying version ${VERSION} to production..."
+            # Add your deployment commands here
+            # Examples:
+            # - aws s3 sync build/ s3://${S3_BUCKET}/ --delete
+            # - firebase deploy --only hosting
+            # - npm run deploy:production
+            - echo "Production deployment complete for version ${VERSION}"
+          after-script:
+            # Tag the release
+            - git tag -a "v${VERSION}" -m "Release ${VERSION}"
+            - git push origin "v${VERSION}"
+
+    master:
+      - step: *test-step
+      - step:
+          <<: *build-step
+          name: Build for Production
+      - step:
+          name: Deploy to Production
+          deployment: production
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying version ${VERSION} to production..."
+            - echo "Production deployment complete for version ${VERSION}"
+          after-script:
+            - git tag -a "v${VERSION}" -m "Release ${VERSION}"
+            - git push origin "v${VERSION}"
+
+    # Staging deployments from develop branch
+    develop:
+      - step: *test-step
+      - step:
+          <<: *build-step
+          name: Build for Staging
+          script:
+            - *install-dependencies
+            # Minor version increment for develop
+            - export VERSION_INCREMENT=minor
+            - *setup-versioning
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - export REACT_APP_ENVIRONMENT=staging
+            - npm run build
+            - cp public/version.json build/version.json
+      - step:
+          name: Deploy to Staging
+          deployment: staging
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying version ${VERSION} to staging..."
+            # Add staging deployment commands
+            - echo "Staging deployment complete for version ${VERSION}"
+
+    # Feature branches - patch versions
+    'feature/*':
+      - step: *test-step
+      - step:
+          <<: *build-step
+          name: Build Feature Branch
+          script:
+            - *install-dependencies
+            - export VERSION_INCREMENT=patch
+            - *setup-versioning
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - export REACT_APP_ENVIRONMENT=development
+            - npm run build
+            - cp public/version.json build/version.json
+
+    # Hotfix branches - patch versions, deploy to production
+    'hotfix/*':
+      - step: *test-step
+      - step:
+          <<: *build-step
+          name: Build Hotfix
+          script:
+            - *install-dependencies
+            - export VERSION_INCREMENT=patch
+            - *setup-versioning
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - npm run build
+            - cp public/version.json build/version.json
+      - step:
+          name: Deploy Hotfix to Production
+          deployment: production
+          trigger: manual
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying hotfix version ${VERSION} to production..."
+            - echo "Hotfix deployment complete"
+
+    # Release branches - minor versions
+    'release/*':
+      - step: *test-step
+      - step:
+          <<: *build-step
+          name: Build Release
+          script:
+            - *install-dependencies
+            - export VERSION_INCREMENT=minor
+            - *setup-versioning
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - npm run build
+            - cp public/version.json build/version.json
+      - step:
+          name: Deploy Release to Staging
+          deployment: staging
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying release version ${VERSION} to staging..."
+            - echo "Release deployment to staging complete"
+      - step:
+          name: Deploy Release to Production
+          deployment: production
+          trigger: manual
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying release version ${VERSION} to production..."
+            - echo "Release deployment to production complete"
+
+  # =============================================================================
+  # Tag-based pipelines
+  # =============================================================================
+  
+  tags:
+    # Semantic version tags (v1.0.0, v2.1.3, etc.)
+    'v*':
+      - step:
+          name: Build Tagged Release
+          caches:
+            - npm
+            - node
+          script:
+            - *install-dependencies
+            # Extract version from tag and set environment
+            - export TAG_VERSION=${BITBUCKET_TAG#v}
+            - echo "Building tagged release version ${TAG_VERSION}"
+            - export REACT_APP_VERSION=${TAG_VERSION}
+            - export REACT_APP_BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            - export REACT_APP_BUILD_ID=${BITBUCKET_BUILD_NUMBER}
+            - export REACT_APP_ENVIRONMENT=production
+            # Update public/version.json for the build
+            - chmod +x ./scripts/version-manager.sh
+            - |
+              cat > public/version.json << EOF
+              {
+                "version": "${TAG_VERSION}",
+                "buildTimestamp": "${REACT_APP_BUILD_TIMESTAMP}",
+                "buildId": "${REACT_APP_BUILD_ID}",
+                "environment": "${REACT_APP_ENVIRONMENT}"
+              }
+              EOF
+            - npm run build
+            - cp public/version.json build/version.json
+          artifacts:
+            - build/**
+      - step:
+          name: Deploy Tagged Release
+          deployment: production
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying tagged release version ${VERSION} to production..."
+            # Add your production deployment commands here
+            - echo "Tagged release deployment complete"
+
+  # =============================================================================
+  # Custom/Manual pipelines
+  # =============================================================================
+  
+  custom:
+    # Manual major version bump
+    major-release:
+      - variables:
+          - name: VERSION_INCREMENT
+            default: major
+      - step: *test-step
+      - step:
+          name: Build Major Release
+          caches:
+            - npm
+            - node
+          script:
+            - *install-dependencies
+            - export VERSION_INCREMENT=major
+            - chmod +x ./scripts/version-manager.sh
+            - ./scripts/version-manager.sh major
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - npm run build
+            - cp public/version.json build/version.json
+          artifacts:
+            - build/**
+            - public/version.json
+      - step:
+          name: Deploy Major Release
+          deployment: production
+          trigger: manual
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying major version ${VERSION} to production..."
+            - git tag -a "v${VERSION}" -m "Major Release ${VERSION}"
+            - git push origin "v${VERSION}"
+
+    # Manual minor version bump
+    minor-release:
+      - variables:
+          - name: VERSION_INCREMENT
+            default: minor
+      - step: *test-step
+      - step:
+          name: Build Minor Release
+          caches:
+            - npm
+            - node
+          script:
+            - *install-dependencies
+            - export VERSION_INCREMENT=minor
+            - chmod +x ./scripts/version-manager.sh
+            - ./scripts/version-manager.sh minor
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - npm run build
+            - cp public/version.json build/version.json
+          artifacts:
+            - build/**
+            - public/version.json
+      - step:
+          name: Deploy Minor Release
+          deployment: production
+          trigger: manual
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying minor version ${VERSION} to production..."
+            - git tag -a "v${VERSION}" -m "Minor Release ${VERSION}"
+            - git push origin "v${VERSION}"
+
+    # Manual patch version bump
+    patch-release:
+      - variables:
+          - name: VERSION_INCREMENT
+            default: patch
+      - step: *test-step
+      - step:
+          name: Build Patch Release
+          caches:
+            - npm
+            - node
+          script:
+            - *install-dependencies
+            - export VERSION_INCREMENT=patch
+            - chmod +x ./scripts/version-manager.sh
+            - ./scripts/version-manager.sh patch
+            - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+            - npm run build
+            - cp public/version.json build/version.json
+          artifacts:
+            - build/**
+            - public/version.json
+      - step:
+          name: Deploy Patch Release
+          deployment: production
+          trigger: manual
+          script:
+            - export VERSION=$(cat build/version.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+            - echo "Deploying patch version ${VERSION} to production..."
+            - git tag -a "v${VERSION}" -m "Patch Release ${VERSION}"
+            - git push origin "v${VERSION}"
+
+# =============================================================================
+# Options
+# =============================================================================
+
+options:
+  max-time: 30
