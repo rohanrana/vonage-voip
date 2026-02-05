@@ -12,6 +12,9 @@ import DecorativePanel from "./components/DecorativePanel";
 import CallAnimation from "./components/CallAnimation";
 import DialPad from "./components/DialPad";
 import TranscriptionPanel from "./components/TranscriptionPanel";
+import VersionUpdateBanner from "./components/VersionUpdateBanner";
+import { useVersionCheck } from "./hooks/useVersionCheck";
+import { logVersionInfo } from "./utils/version";
 import "./components/styles/animations.css";
 
 // Silence Vonage internal noise
@@ -52,6 +55,22 @@ function App() {
   const [error, setError] = useState(null);
   const [session, setSession] = useState();
   const [isSystemOk, setIsSystemOk] = useState(false);
+
+  // Version check hook - checks for updates every minute
+  const {
+    updateAvailable,
+    newVersion,
+    reloadToUpdate,
+    dismissUpdate,
+  } = useVersionCheck({
+    checkInterval: 60000, // Check every 1 minute
+    enabled: true,
+  });
+
+  // Log version info on app initialization
+  useEffect(() => {
+    logVersionInfo();
+  }, []);
 
   const [config] = useState(() => new ClientConfig(ConfigRegion.US));
   const [client] = useState(() => {
@@ -255,6 +274,16 @@ function App() {
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
       }}
     >
+      {/* Version Update Banner */}
+      {updateAvailable && (
+        <VersionUpdateBanner
+          newVersion={newVersion}
+          onReload={reloadToUpdate}
+          onDismiss={dismissUpdate}
+          isVisible={updateAvailable}
+        />
+      )}
+
       <div className="d-flex gap-4">
         {/* Decorative Panel or Calling Animation */}
         {!isCalling && <DecorativePanel />}
