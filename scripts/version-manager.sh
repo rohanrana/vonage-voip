@@ -224,9 +224,11 @@ update_package_json() {
     local new_version=$1
     
     if [ -f "$PACKAGE_JSON" ]; then
-        # Update version in package.json using sed
-        sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/" "$PACKAGE_JSON"
-        rm -f "${PACKAGE_JSON}.bak"
+        # Update version in package.json using portable sed approach
+        # This works on both Linux and macOS by using a temp file
+        local temp_file=$(mktemp)
+        sed "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/" "$PACKAGE_JSON" > "$temp_file"
+        mv "$temp_file" "$PACKAGE_JSON"
         log_success "Updated $PACKAGE_JSON with version ${new_version}"
     fi
 }

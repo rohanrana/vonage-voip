@@ -19,9 +19,13 @@ definitions:
     - script: &install-dependencies |
         npm ci --legacy-peer-deps
     
-    - script: &setup-versioning |
+    - script: &setup-versioning-and-export |
         chmod +x ./scripts/version-manager.sh
-        ./scripts/version-manager.sh ${VERSION_INCREMENT:-}
+        # Run version manager and capture output for env vars
+        VERSION_OUTPUT=$(./scripts/version-manager.sh ${VERSION_INCREMENT:-} 2>&1)
+        echo "$VERSION_OUTPUT"
+        # Export REACT_APP_* variables from the output
+        eval $(echo "$VERSION_OUTPUT" | grep "^REACT_APP_" | sed 's/^/export /')
 
   steps:
     # Shared build step
@@ -32,9 +36,7 @@ definitions:
           - node
         script:
           - *install-dependencies
-          - *setup-versioning
-          # Export version env vars for React build
-          - export $(./scripts/version-manager.sh 2>/dev/null | grep REACT_APP | xargs)
+          - *setup-versioning-and-export
           - npm run build
           # Copy version.json to build directory
           - cp public/version.json build/version.json
@@ -211,24 +213,26 @@ pipelines:
             - node
           script:
             - *install-dependencies
-            # Extract version from tag
+            # Extract version from tag and set environment
             - export TAG_VERSION=${BITBUCKET_TAG#v}
             - echo "Building tagged release version ${TAG_VERSION}"
             - export REACT_APP_VERSION=${TAG_VERSION}
             - export REACT_APP_BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             - export REACT_APP_BUILD_ID=${BITBUCKET_BUILD_NUMBER}
             - export REACT_APP_ENVIRONMENT=production
-            - npm run build
-            # Update version.json with tag version
+            # Update public/version.json for the build
+            - chmod +x ./scripts/version-manager.sh
             - |
-              cat > build/version.json << EOF
+              cat > public/version.json << EOF
               {
                 "version": "${TAG_VERSION}",
-                "buildTimestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-                "buildId": "${BITBUCKET_BUILD_NUMBER}",
-                "environment": "production"
+                "buildTimestamp": "${REACT_APP_BUILD_TIMESTAMP}",
+                "buildId": "${REACT_APP_BUILD_ID}",
+                "environment": "${REACT_APP_ENVIRONMENT}"
               }
               EOF
+            - npm run build
+            - cp public/version.json build/version.json
           artifacts:
             - build/**
       - step:

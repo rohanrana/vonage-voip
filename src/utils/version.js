@@ -34,9 +34,25 @@ export const getVersionInfo = () => ({
 
 // Compare semantic versions
 // Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+// Returns 0 for invalid versions (handles gracefully)
 export const compareVersions = (v1, v2) => {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
+  // Validate inputs
+  if (!v1 || !v2 || typeof v1 !== 'string' || typeof v2 !== 'string') {
+    return 0;
+  }
+
+  // Remove 'v' prefix if present and extract base version (before any pre-release suffix)
+  const cleanV1 = v1.replace(/^v/, '').split('-')[0];
+  const cleanV2 = v2.replace(/^v/, '').split('-')[0];
+
+  // Validate semver format (MAJOR.MINOR.PATCH)
+  const semverRegex = /^\d+\.\d+\.\d+$/;
+  if (!semverRegex.test(cleanV1) || !semverRegex.test(cleanV2)) {
+    return 0;
+  }
+
+  const parts1 = cleanV1.split('.').map(Number);
+  const parts2 = cleanV2.split('.').map(Number);
   
   for (let i = 0; i < 3; i++) {
     const p1 = parts1[i] || 0;

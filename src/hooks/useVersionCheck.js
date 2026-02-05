@@ -26,6 +26,7 @@ export const useVersionCheck = (options = {}) => {
   const currentVersion = getAppVersion();
   const intervalRef = useRef(null);
   const documentVisibleRef = useRef(true);
+  const isCheckingRef = useRef(false);
 
   /**
    * Fetch version info from server with cache-busting
@@ -56,11 +57,12 @@ export const useVersionCheck = (options = {}) => {
   }, [versionUrl]);
 
   /**
-   * Check for updates
+   * Check for updates - uses ref to prevent re-render loops
    */
   const checkForUpdates = useCallback(async () => {
-    if (!enabled || isChecking) return;
+    if (!enabled || isCheckingRef.current) return;
 
+    isCheckingRef.current = true;
     setIsChecking(true);
     setError(null);
 
@@ -80,9 +82,10 @@ export const useVersionCheck = (options = {}) => {
       setError(err);
       console.warn('Version check failed:', err.message);
     } finally {
+      isCheckingRef.current = false;
       setIsChecking(false);
     }
-  }, [enabled, isChecking, fetchVersionInfo, currentVersion]);
+  }, [enabled, fetchVersionInfo, currentVersion]);
 
   /**
    * Reload the page to get the latest version
